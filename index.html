@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>X-Plane Live Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" crossorigin="" />
+  <script src="airports.js"></script>
+  <script src="airport-frequencies.js"></script>
+  <script src="navaids.js"></script>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      font-family: Arial, sans-serif;
+    }
+    #controls {
+      padding: 10px;
+      background: #e0e0e0;
+      border-bottom: 1px solid #ccc;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      position: relative; /* needed for absolute searchResults */
+    }
+    #main {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: row;
+      height: 100%;
+    }
+    #map {
+      flex: 1 1 auto;
+    }
+    #info {
+      width: 200px;
+      padding: 10px;
+      background: #f0f0f0;
+      font-size: 14px;
+      line-height: 1.4em;
+      border-left: 1px solid #ccc;
+      overflow-y: auto;
+    }
+    .rotated-marker {
+      transform-origin: 16px 16px;
+      transition: transform 0.5s ease;
+    }
+    select, button, input {
+      padding: 4px;
+      font-size: 14px;
+    }
+    #airportSearch {
+      width: 220px;
+      max-width: 100%;
+      position: relative;
+      z-index: 1000;
+    }
+    #searchResults {
+      position: absolute;
+      top: 40px; /* below input */
+      left: 0;
+      background: white;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      border: 1px solid #ccc;
+      max-height: auto;
+      overflow-y: auto;
+      width: 250px;
+      z-index: 10000;
+    }
+    #searchResults li {
+      padding: 5px;
+      cursor: pointer;
+    }
+    #searchResults li:hover {
+      background-color: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="controls">
+	<button id="toggleFollowButton">Auto-Follow: ON</button>
+	
+    <label for="countrySelect">Country:</label>
+    <select id="countrySelect">
+      <option value="">All</option>
+    </select>
+
+    <label for="typeSelect">Type:</label>
+    <select id="typeSelect">
+      <option value="">All</option>
+    </select>
+
+    <label for="airportSearch">Search Airport:</label>
+    <input type="text" id="airportSearch" placeholder="Search Airport..." autocomplete="off" />
+    <ul id="searchResults"></ul>
+
+  
+  </div>
+
+  <div id="main">
+    <div id="map"></div>
+    <div id="info">
+	  <b>Xplane Live Map V1.3</b><br />
+      <b>Flight Data</b><br />
+      Altitude: <span id="alt">--</span> Ft<br />
+      True Heading: <span id="true_heading">--</span>°<br />
+	  Mag Heading: <span id="heading">--</span>°<br />
+	  Speed: <span id="speed">--</span> knots<br />
+      Ground Speed: <span id="gspeed">--</span> knots<br />
+      Vertical Speed: <span id="vspeed">--</span> fpm<br />
+      Pitch: <span id="pitch">--</span>°<br />
+      Roll: <span id="roll">--</span>°<br />
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const planeIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/128/565/565665.png",
+      iconSize: [28, 28],
+      iconAnchor: [12, 12],
+      className: "rotated-marker"
+    });
+
+    const map = L.map("map", {
+      dragging: true,
+      touchZoom: true,
+      scrollWheelZoom: true,
+      zoomControl: true
+    }).setView([0, 0], 6);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
+    const marker = L.marker([0, 0], { icon: planeIcon }).addTo(map);
+    const flightPath = L.polyline([], { color: "blue" }).addTo(map);
+    let iconElement = null;
+    let autoFollow = true;
+
+    marker.on("add", () => {
+      iconElement = marker.getElement();
+    });
+
+    async function updatePosition() {
+      try {
+        const res = await fetch("position.json?_t=" + Date.now());
+        const data = await res.json();
+
+        const { lat, lon, alt, true_heading, heading, speed, ground_speed, vspeed, pitch, roll } = data;
+
+
+        marker.setLatLng([lat, lon]);
+
+        if (autoFollow) {
+          map.setView([lat, lon]);
+        }
+
+        if (iconElement) {
+          iconElement.style.transform = `rotate(${true_heading - 90}deg)`;
+        }
+
+        flightPath.addLatLng([lat, lon]);
+
+        document.getElementById("alt").textContent = alt.toFixed(1);
+        document.getElementById("true_heading").textContent = true_heading.toFixed(1);
+		document.getElementById("heading").textContent = heading.toFixed(1);
+        document.getElementById("speed").textContent = data.speed.toFixed(1);
+        document.getElementById("gspeed").textContent = ground_speed.toFixed(1);
+        document.getElementById("vspeed").textContent = vspeed ? vspeed.toFixed(1) : "0";
+        document.getElementById("pitch").textContent = pitch.toFixed(1);
+        document.getElementById("roll").textContent = roll.toFixed(1);
+      } catch (err) {
+        console.error("Failed to load position:", err);
+      }
+    }
+
+    setInterval(updatePosition, 1000);
+
+    document.getElementById("toggleFollowButton").addEventListener("click", () => {
+      autoFollow = !autoFollow;
+      const btn = document.getElementById("toggleFollowButton");
+      btn.textContent = autoFollow ? "Auto-Follow: ON" : "Auto-Follow: OFF";
+    });
+
+    // Draw airports and setup search
+    const airportSearchInput = document.getElementById("airportSearch");
+    const searchResults = document.getElementById("searchResults");
+
+    const airportList = airports
+      .filter(a => a.lat && a.lon)
+      .map(a => ({
+        name: a.name,
+        iata: a.iata || '',
+        lat: a.lat,
+        lon: a.lon,
+        display: `${a.name} (${a.iata || 'N/A'})`
+      }));
+
+    // Draw airports on map
+    airportList.forEach(airport => {
+      L.circleMarker([airport.lat, airport.lon], {
+        radius: 1,
+        color: "blue",
+        fillColor: "blue",
+        fillOpacity: 0.7
+      })
+      .bindPopup(`<b>${airport.name}</b><br />IATA: ${airport.iata || 'N/A'}`)
+      .addTo(map);
+    });
+
+    airportSearchInput.addEventListener("input", () => {
+      const query = airportSearchInput.value.toLowerCase();
+      searchResults.innerHTML = "";
+
+      if (!query) return;
+
+      const matches = airportList.filter(a =>
+        a.name.toLowerCase().includes(query) || a.iata.toLowerCase().includes(query)
+      ).slice(0, 10);
+
+      matches.forEach(match => {
+        const li = document.createElement("li");
+        li.textContent = match.display;
+        li.addEventListener("click", () => {
+          autoFollow = false;
+          document.getElementById("toggleFollowButton").textContent = "Enable Auto-Follow";
+          map.setView([match.lat, match.lon], 10);
+          searchResults.innerHTML = "";
+          airportSearchInput.value = "";
+        });
+        searchResults.appendChild(li);
+      });
+    });
+
+    // Hide search results if clicking outside
+    document.addEventListener("click", (e) => {
+      if (!airportSearchInput.contains(e.target) && !searchResults.contains(e.target)) {
+        searchResults.innerHTML = "";
+      }
+    });
+  </script>
+
+  <script>
+    const navaidLayerGroup = L.layerGroup().addTo(map);
+
+    function populateFilters() {
+      const countrySet = new Set();
+      const typeSet = new Set();
+
+      navaids.forEach(n => {
+        if (n.country) countrySet.add(n.country);
+        if (n.type) typeSet.add(n.type);
+      });
+
+      const countrySelect = document.getElementById("countrySelect");
+      const typeSelect = document.getElementById("typeSelect");
+
+      [...countrySet].sort().forEach(country => {
+        const opt = document.createElement("option");
+        opt.value = country;
+        opt.textContent = country;
+        countrySelect.appendChild(opt);
+      });
+
+      [...typeSet].sort().forEach(type => {
+        const opt = document.createElement("option");
+        opt.value = type;
+        opt.textContent = type;
+        typeSelect.appendChild(opt);
+      });
+    }
+
+    function updateNavaids() {
+      const selectedCountry = document.getElementById("countrySelect").value;
+      const selectedType = document.getElementById("typeSelect").value;
+
+      navaidLayerGroup.clearLayers();
+
+      navaids
+        .filter(n =>
+          (!selectedCountry || n.country === selectedCountry) &&
+          (!selectedType || n.type === selectedType) &&
+          n.latitude_deg && n.longitude_deg
+        )
+        .forEach(navaid => {
+          const popupContent = `
+            <b>${navaid.name}</b><br />
+            Ident: ${navaid.ident}<br />
+            Type: ${navaid.type}<br />
+            Frequency: ${navaid.frequency_khz || 'N/A'} kHz<br />
+            Elevation: ${navaid.elevation_ft || 'N/A'} ft<br />
+            Power: ${navaid.power || 'N/A'}<br />
+            Associated Airport: ${navaid.associated_airport || 'N/A'}<br />
+            Country: ${navaid.country || 'N/A'}
+          `;
+
+          const marker = L.circleMarker(
+            [parseFloat(navaid.latitude_deg), parseFloat(navaid.longitude_deg)],
+            {
+              radius: 3,
+              color: "green",
+              fillColor: "limegreen",
+              fillOpacity: 0.8
+            }
+          ).bindPopup(popupContent);
+
+          navaidLayerGroup.addLayer(marker);
+        });
+    }
+
+    document.getElementById("countrySelect").addEventListener("change", updateNavaids);
+    document.getElementById("typeSelect").addEventListener("change", updateNavaids);
+
+    populateFilters();
+    updateNavaids();
+  </script>
+
+</body>
+</html>
+
+
+
+
+
